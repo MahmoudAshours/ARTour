@@ -2,7 +2,9 @@ package com.AR.Tour.Shared.Anchor.cloudanchor;
 
 import android.content.Context;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
 import android.support.annotation.Nullable;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -20,11 +22,14 @@ import com.google.ar.core.HitResult;
 import com.google.ar.core.Session;
 import com.AR.Tour.Shared.Anchor.cloudanchor.helpers.SnackbarHelper;
 import com.google.ar.sceneform.AnchorNode;
+import com.google.ar.sceneform.Node;
 import com.google.ar.sceneform.Scene;
 
 import com.google.ar.sceneform.rendering.ModelRenderable;
 import com.google.ar.sceneform.ux.ArFragment;
 import com.google.ar.sceneform.ux.TransformableNode;
+
+import java.util.Locale;
 
 /**
  * Main Fragment for the App.
@@ -35,11 +40,12 @@ public class CloudAnchorFragment extends ArFragment {
 
     private Scene arScene;
     private AnchorNode anchorNode;
-    private ModelRenderable andyRenderable;
+    private ModelRenderable modelRenderable;
     private FirebaseManager firebaseManager;
     private Button resolveButton;
     private final CloudAnchorManager cloudAnchorManager = new CloudAnchorManager();
     private final SnackbarHelper snackbarHelper = new SnackbarHelper();
+    private TextToSpeech textToSpeech;
 
     @Override
     protected Config getSessionConfiguration(Session session) {
@@ -54,7 +60,7 @@ public class CloudAnchorFragment extends ArFragment {
         ModelRenderable.builder()
                 .setSource(context, R.raw.gandam)
                 .build()
-                .thenAccept(renderable -> andyRenderable = renderable);
+                .thenAccept(renderable -> modelRenderable = renderable);
 
         firebaseManager = new FirebaseManager(context);
     }
@@ -79,8 +85,36 @@ public class CloudAnchorFragment extends ArFragment {
         arScene = getArSceneView().getScene();
         arScene.addOnUpdateListener(frameTime -> cloudAnchorManager.onUpdate());
         setOnTapArPlaneListener((hitResult, plane, motionEvent) -> onArPlaneTap(hitResult));
+        textToSpeech = new TextToSpeech(getContext(), new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                if (status == TextToSpeech.SUCCESS) {
+                    int ttsLang = textToSpeech.setLanguage(Locale.US);
+
+                    if (ttsLang == TextToSpeech.LANG_MISSING_DATA
+                            || ttsLang == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Log.e("TTS", "The Language is not supported!");
+                    } else {
+                        Log.i("TTS", "Language Supported.");
+                    }
+                    Log.i("TTS", "Initialization success.");
+                } else {
+                    Toast.makeText(getContext(), "TTS Initialization failed!", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
         return rootView;
     }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+        }
+    }
+
 
     private synchronized void onArPlaneTap(HitResult hitResult) {
         if (anchorNode != null) {
@@ -123,7 +157,7 @@ public class CloudAnchorFragment extends ArFragment {
             anchorNode = null;
         }
         if (anchor != null) {
-            if (andyRenderable == null) {
+            if (modelRenderable == null) {
                 // Display an error message if the renderable model was not available.
                 Toast toast = Toast.makeText(getContext(), "Andy model was not loaded.", Toast.LENGTH_LONG);
                 toast.setGravity(Gravity.CENTER, 0, 0);
@@ -137,10 +171,20 @@ public class CloudAnchorFragment extends ArFragment {
             // Create the transformable andy and add it to the anchor.
             TransformableNode andy = new TransformableNode(getTransformationSystem());
             andy.setParent(anchorNode);
-            andy.setRenderable(andyRenderable);
+            andy.setRenderable(modelRenderable);
+            andy.setOnTapListener((a, b) -> {
+                String data = getString(R.string.tts);
+                Log.i("TTS", "button clicked: " + data);
+                int speechStatus = textToSpeech.speak(data, TextToSpeech.QUEUE_FLUSH, null);
+
+                if (speechStatus == TextToSpeech.ERROR) {
+                    Log.e("TTS", "Error in converting Text to Speech!");
+                }
+            });
             andy.select();
         }
     }
+
 
     private synchronized void onHostedAnchorAvailable(Anchor anchor) {
         Anchor.CloudAnchorState cloudState = anchor.getCloudAnchorState();
